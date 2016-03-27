@@ -25,76 +25,94 @@ function flatList(nestedList, seed = []) {
     }, seed)
 }
 
-function getNodeLeafs(node) {
-    if (node.children != 0) {
+function is_leaf(node) {
+    if (!node.hasChildNodes() || node.children.length == 0) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+function getNodeLeafsFromIter(iterator, make_iterator, maxLeafs) {
+    var result = [];
+    var cur_res = iterator.next();
+    while (cur_res.done == false && result.length < maxLeafs) {
+        result = result.concat(getNodeLeafs(cur_res.value, make_iterator, maxLeafs - result.length));
+        cur_res = iterator.next();
+    }
+
+    return result;
+}
+
+function getNodeLeafs(node, make_iterator, maxLeafs) {
+    if (is_leaf(node)) {
         return [node];
     }
-    
+
+    return getNodeLeafsFromIter(make_iterator(node.childNodes), make_iterator, maxLeafs);
+}
+
+
+function get_n_neibhor_leafs(make_iterator, doc, node, maxLeafs) {
+    var ascending_list = [];
+    while (node != doc.documentElement) {
+        var siblings = node.parentNode.childNodes;
+        var indexOfNode = Array.prototype.indexOf.call(siblings, node);
+        ascending_list.push(make_iterator(siblings, indexOfNode));
+        node = node.parentNode;
+    }
+
     var result = [];
+    for (var i = 0; i < ascending_list.length && result.length < maxLeafs; i++) {
+        result = result.concat(getNodeLeafsFromIter(ascending_list[i], make_iterator, maxLeafs - result.length));
+    }
 
-    for (var i = 0; i < node.childen.length; i++) {
-        result.push(getNodeLeafs(node.childen[i]));
+    return result;
+}
+
+
+function makeForwardIterator(array, zero_index = -1) {
+    var cur_index = zero_index + 1;
+    
+    return {
+        next: function() {
+            if (cur_index < array.length) {
+                return {
+                    value: array[cur_index++],
+                    done: false
+                };
+            } else {
+                return { done: true };
+            }
+        }
+    }    
+}
+
+function makeBackwardIterator(array, zero_index = -1) {
+    var cur_index;
+
+    if (zero_index == -1) {
+        cur_index = array.length - 1;
+    } else {
+        cur_index = zero_index - 1;   
     }
     
-    return flatList(result);
+    return {
+        next: function() {
+            if (cur_index >= 0) {
+                return {
+                    value: array[cur_index--],
+                    done: false
+                };
+            } else {
+                return { done: true };
+            }
+        }
+    }    
 }
 
-function previous_n(doc, node, n) {
-    if (node.isEqualNode(doc.elementNode)) {
-        return []; 
-    }
-
-    var left_siblings = [];
-
-    for (var i = 0; i < node.parentNode.childNodes.length; ++i) {
-        if (node.isEqualNode(node.parentNode.childNodes[i])) {
-            break;
-        }
-
-        left_siblings.push(node.parentNode.childNodes[i]);
-    }
-
-    left_siblings.reverse();
-    var sum_length = 0;
-    var leafsList = [];
-    for (var i = 0; i < left_siblings.length && sum_length < n; i++) {
-        var currentLeafsList = getNodeLeafs(left_siblings[i]);
-        leafsList.push(currentLeafsList);
-        sum_length += currentLeafsList.length;
-    }
-
-    return flatList(leafsList);
-}
-
-function next_n(doc, node, n) {
-    if (node.isEqualNode(doc.elementNode)) {
-        return []; 
-    }
-
-    var right_siblings = [];
-    var afterNode = false;
-
-    for (var i = 0; i < node.parentNode.childNodes.length; ++i) {
-        if (afterNode) {
-            right_siblings.push(node.parentNode.childNodes[i]);
-        }
-
-        if (node.isEqualNode(node.parentNode.childNodes[i])) {
-            afterNode = true;
-        }
-    }
-
-    var sum_length = 0;
-    var leafsList = [];
-    for (var i = 0; i < right_siblings.length && sum_length < n; i++) {
-        var currentLeafsList = getNodeLeafs(right_siblings[i]);
-        leafsList.push(currentLeafsList);
-        sum_length += currentLeafsList.length;
-    }
-
-    return flatList(leafsList);
-
-}
+var previous_n = get_n_neibhor_leafs.bind(null, makeBackwardIterator);
+var next_n = get_n_neibhor_leafs.bind(null, makeForwardIterator);
 
 module.exports.ancestors_all = ancestors_all;
 module.exports.ancestors_n = ancestors_n;
