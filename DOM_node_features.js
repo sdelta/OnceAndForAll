@@ -84,7 +84,6 @@ function next_n(doc, node, n) {
         }
     }
 
-    right_siblings.reverse();
     var sum_length = 0;
     var leafsList = [];
     for (var i = 0; i < right_siblings.length && sum_length < n; i++) {
