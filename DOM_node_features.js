@@ -8,7 +8,7 @@ function realLeafToAlmostLeaf(node) {
         }
     }
 
-    while (node != win.document.documentElement && is_almost_leaf(node.parentNode)) {
+    while (is_almost_leaf(node.parentNode)) {
         node = node.parentNode;
     }
 
@@ -27,8 +27,14 @@ function isLeafBeforeAnother(l1, l2) {
     }
 }
 
+function isNodeInsideAnother(n1, n2) {
+    const tmp = n1.compareDocumentPosition(n2);
+    return (tmp & 8) > 0 || (tmp & 16) > 0;
+}
+
 function isLeafNodeInRange(firstLeafInRange, lastLeafInRange, node) {
-    if (firstLeafInRange === node || lastLeafInRange === node) {
+    if (firstLeafInRange === node || isNodeInsideAnother(node, firstLeafInRange) ||
+        lastLeafInRange === node  || isNodeInsideAnother(node, lastLeafInRange)) {
         return true;
     } 
 
@@ -68,8 +74,12 @@ function getNodeLeafsFromIter(iterator, make_iterator = makeForwardIterator, max
 }
 
 function getNodeLeafs(node, make_iterator = makeForwardIterator, maxLeafs = Infinity) {
-    if (node.childNodes.length == 0) {
+    if (!node.hasChildNodes()) {
         return [node];
+    }
+
+    if (make_iterator !== makeForwardIterator && make_iterator !== makeBackwardIterator) {
+        console.log("nodeName = ", node.nodeName);
     }
 
     return getNodeLeafsFromIter(make_iterator(node.childNodes), make_iterator, maxLeafs);
@@ -203,7 +213,6 @@ function leafsToForest(doc, leafsList) {
     return result;
 }
 
-// untested
 function levenshteinDistanceOfSequence(pattern, sequence) {
     var result = []
     var prevDistanceColumn = new Array(pattern.length + 1);
@@ -216,19 +225,20 @@ function levenshteinDistanceOfSequence(pattern, sequence) {
     for (var i = 0; i < sequence.length; i++) {
         curDistanceColumn[0] = 0;
         for (var j = 1; j < curDistanceColumn.length; j++) {
-            var costOfChange = prevDistanceColumn[j];
-            if (pattern[j] != sequence[i]) {
+            var costOfChange = prevDistanceColumn[j - 1];
+            if (pattern[j - 1] != sequence[i]) {
                 costOfChange++;
             }
 
-            curDistanceColumn[j] = min(costOfChange, min(prevDistance[j] + 1, curDistanceColumn[j - 1] + 1));
+            curDistanceColumn[j] = Math.min(costOfChange, Math.min(prevDistanceColumn[j] + 1, curDistanceColumn[j - 1] + 1));
         }
+        prevDistanceColumn = curDistanceColumn.slice();
+        result.push(curDistanceColumn[curDistanceColumn.length - 1]);
     }
 
     return result;
 }
 
-// untested
 function* makeGeneratorOfPossibleMatches(doc, nodesList) {
     function nodesToNodeTypes(array) {
         return array.map(function (node) {
@@ -236,10 +246,11 @@ function* makeGeneratorOfPossibleMatches(doc, nodesList) {
         });
     }
 
-    const pattern = nodesToNodeTypes(nodesList);
+    const pattern = nodesToNodeTypes(nodesList.map(realLeafToAlmostLeaf));
 
-    const wholeHTML = getNodeLeafs(doc.documentElement);
-    var numberedSeq = levenshteinDistanceOfSequence(pattern, nodesToNodeTypes(wholeHTML)).map(function(item, index) {
+    const wholeHTML = getNodeLeafs(doc.documentElement).map(realLeafToAlmostLeaf);
+    const wholeHTMLTitles = nodesToNodeTypes(wholeHTML); 
+    var numberedSeq = levenshteinDistanceOfSequence(pattern, wholeHTMLTitles).map(function(item, index) {
         return {
             value: item, 
             index: index
@@ -270,9 +281,10 @@ function* makeGeneratorOfPossibleMatches(doc, nodesList) {
 
     for (var i = 0; i < numberedSeq.length; i++) {
         if (! isIndexTaken(numberedSeq[i].index)) {
-            takenIndex.push(numberedSeq[i].index);
+            takenIndexes.push(numberedSeq[i].index);
+            const ind = numberedSeq[i].index;
             var stop = yield { 
-                node: wholeHTML[numberedSeq[i].index], 
+                leafs: wholeHTML.slice(Math.max(0, ind - pattern.length + 1), ind + 1), 
                 distance: numberedSeq[i].value 
             };
 
@@ -281,6 +293,25 @@ function* makeGeneratorOfPossibleMatches(doc, nodesList) {
             }
         }
     }
+}
+
+function generatorToArray(generator, maxLength = Infinity) {
+    var result = [];
+    var cur_value = generator.next();
+    while (!cur_value.hasOwnProperty("done") || cur_value.done != true) {
+        result.push(cur_value.value);
+        if (result.length == maxLength) {
+            cur_value = generator.next(true); 
+        } else {
+            cur_value = generator.next();
+        }
+    }
+
+    if (cur_value.hasOwnProperty('value') && cur_value.value !== undefined) {
+        result.push(cur_value.value);
+    }
+
+    return result;
 }
 
 module.exports.getAllAncestorsOfNode = ancestors_all;
