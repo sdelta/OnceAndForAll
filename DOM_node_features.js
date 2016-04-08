@@ -267,40 +267,95 @@ function* makeGeneratorOfPossibleMatches(doc, nodesList) {
         }
     });
 
-    var takenIndexes = [];
-
-    function isIndexTaken(index) {
-        for (var i = 0; i < takenIndexes.length; i++) {
-            if (index - takenIndexes[i] > 0 && index - takenIndexes[i] < pattern.length) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     for (var i = 0; i < numberedSeq.length; i++) {
-        if (! isIndexTaken(numberedSeq[i].index)) {
-            takenIndexes.push(numberedSeq[i].index);
-            const ind = numberedSeq[i].index;
-            var stop = yield { 
-                leafs: wholeHTML.slice(Math.max(0, ind - pattern.length + 1), ind + 1), 
-                distance: numberedSeq[i].value 
-            };
+        const ind = numberedSeq[i].index;
+        var stop = yield { 
+            leafs: wholeHTML.slice(Math.max(0, ind - pattern.length + 1), ind + 1), 
+            distance: numberedSeq[i].value 
+        };
 
-            if (stop) {
-                break;
-            }
+        if (stop) {
+            break;
         }
     }
 }
 
-function generatorToArray(generator, maxLength = Infinity) {
+function* filterGenerator(generator, f) {
+    var carryOn = true;
+    var parameter = undefined;
+    while (carryOn) {
+        var tmp;
+
+        if (parameter === undefined) {
+            tmp = generator.next();
+        } else {
+            tmp = generator.next(parameter);
+        }
+
+        carryOn = !tmp.done;
+        if (tmp.value && f(tmp.value)) {
+            parameter = yield tmp.value;
+        }
+    }
+}
+
+function getFunctionIsNotInsideNode() {
+    var alreadyPickedLeafs = [];
+
+    function doesNotIntersect(obj) {
+        const leafList = obj.leafs;
+        if (leafList === []) {
+            return false;
+        }
+
+        for (var i = 0; i < alreadyPickedLeafs.length; ++i) {
+            const firstLeaf = alreadyPickedLeafs[i][0];
+            const lastLeaf = alreadyPickedLeafs[i][alreadyPickedLeafs[i].length - 1];
+            if (isLeafNodeInRange(firstLeaf, lastLeaf, leafList[0]) ||
+                isLeafNodeInRange(firstLeaf, lastLeaf, leafList[leafList.length - 1])) {
+
+                return false;
+            }
+        }
+
+        alreadyPickedLeafs.push(leafList);
+        return true;
+    }
+
+    return doesNotIntersect;
+}
+
+function deleteIntersectingItems(listOfListOfLeafs) {
+    var lastIncludedLeaf = null;
+    function isNotInsideNode(obj) {
+        const leafList = obj.leafs;
+        if (leafList === []) {
+            return false;
+        }
+
+        if (lastIncludedLeaf === null || 
+            !isLeafNodeInRange(leafList[0], leafList[leafList.length - 1], lastIncludedLeaf)) {
+         
+            lastIncludedLeaf = leafList[leafList.length - 1];
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    return listOfListOfLeafs.filter(isNotInsideNode);
+}
+
+function stopCriterion_never(processed_values) {
+    return false;
+}
+
+function generatorToArray(generator, maxLength = Infinity, stopCriterion = stopCriterion_never) {
     var result = [];
     var cur_value = generator.next();
     while (!cur_value.hasOwnProperty("done") || cur_value.done != true) {
         result.push(cur_value.value);
-        if (result.length == maxLength) {
+        if (result.length == maxLength || stopCriterion(result)) {
             cur_value = generator.next(true); 
         } else {
             cur_value = generator.next();
